@@ -1,0 +1,13 @@
+{
+  "name": "CP PLUS Camera Client",
+  "image": "mcr.microsoft.com/devcontainers/python:1-3.12-bookworm",
+  "forwardPorts": [8080],
+  "portsAttributes": {
+    "8080": {
+      "label": "CP PLUS camera web app",
+      "onAutoForward": "openBrowser"
+    }
+  },
+  "postStartCommand": "sh -c 'nohup python3 web_app.py >/tmp/cplus-camera-web.log 2>&1 &'",
+  "postCreateCommand": "python3 -m unittest discover -s tests -q"
+}
