@@ -1,0 +1,14 @@
+# Original APKs and signing material must stay outside Git.
+input/*.apk
+*.keystore
+*.jks
+*.pem
+*.key
+
+# Generated analysis output can be large and is recreated by the script.
+output/
+tools/
+reports/local/
+__pycache__/
+*.pyc
+
