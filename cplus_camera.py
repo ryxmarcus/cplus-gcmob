@@ -41,6 +41,14 @@ class CameraConfig:
             raise ValueError("channel must be >= 1 and subtype must be 0 (main) or 1 (sub)")
 
 
+@dataclass(frozen=True)
+class CameraChannel:
+    """A channel reported by a CP PLUS/Dahua recorder."""
+
+    number: int
+    name: str
+
+
 class CPPlusCamera:
     """Uses CP PLUS/Dahua-compatible CGI endpoints with HTTP Digest authentication."""
 
@@ -74,6 +82,36 @@ class CPPlusCamera:
         response = self._get("/cgi-bin/magicBox.cgi", {"action": "getSystemInfo"})
         return response.decode("utf-8", errors="replace")
 
+    def channels(self) -> list[CameraChannel]:
+        """Return the recorder's configured camera channels."""
+        response = self._get(
+            "/cgi-bin/configManager.cgi",
+            {"action": "getConfig", "name": "ChannelTitle"},
+        ).decode("utf-8", errors="replace")
+        values: dict[str, str] = {}
+        for line in response.splitlines():
+            key, separator, value = line.partition("=")
+            if separator:
+                values[key.strip()] = value.strip()
+
+        channels = []
+        index = 0
+        while f"table.ChannelTitle[{index}].Name" in values:
+            channels.append(
+                CameraChannel(
+                    number=index + 1,
+                    name=values[f"table.ChannelTitle[{index}].Name"],
+                )
+            )
+            index += 1
+        if not channels:
+            raise CameraError("camera returned no configured channels")
+        return channels
+
+    def test_connection(self) -> list[CameraChannel]:
+        """Authenticate to the recorder and return its available channels."""
+        return self.channels()
+
     def snapshot(self) -> bytes:
         """Fetch one JPEG snapshot from the selected channel."""
         return self._get(
@@ -102,12 +140,18 @@ def main() -> int:
     parser.add_argument("--subtype", type=int, choices=(0, 1), default=0)
     parser.add_argument("--https", action="store_true")
     parser.add_argument("--device-info", action="store_true")
+    parser.add_argument("--channels", action="store_true", help="List configured recorder channels")
     parser.add_argument("--snapshot", type=Path, metavar="JPEG_PATH")
     parser.add_argument("--print-rtsp-template", action="store_true")
     args = parser.parse_args()
-    if not (args.device_info or args.snapshot or args.print_rtsp_template):
-        parser.error("select --device-info, --snapshot, or --print-rtsp-template")
-    only_template = args.print_rtsp_template and not args.device_info and args.snapshot is None
+    if not (args.device_info or args.channels or args.snapshot or args.print_rtsp_template):
+        parser.error("select --device-info, --channels, --snapshot, or --print-rtsp-template")
+    only_template = (
+        args.print_rtsp_template
+        and not args.device_info
+        and not args.channels
+        and args.snapshot is None
+    )
     password = args.password if args.password is not None else ("" if only_template else getpass.getpass("Camera password: "))
     camera = CPPlusCamera(
         CameraConfig(
@@ -124,6 +168,9 @@ def main() -> int:
     try:
         if args.device_info:
             print(camera.device_info())
+        if args.channels:
+            for channel in camera.channels():
+                print(f"{channel.number}: {channel.name}")
         if args.snapshot:
             args.snapshot.parent.mkdir(parents=True, exist_ok=True)
             args.snapshot.write_bytes(camera.snapshot())
